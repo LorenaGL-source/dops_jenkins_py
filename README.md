@@ -100,7 +100,7 @@ Este proyecto ejecuta, de forma **100 % automatizada**, un proceso de extracció
 
 ```bash
 # clonar repositorio
-git clone https://github.com/tu-org/pagila-etl.git
+git clone https://github.com/LorenaGL-source/dops_jenkins_py.git
 cd pagila-etl
 
 # levantar los servicios

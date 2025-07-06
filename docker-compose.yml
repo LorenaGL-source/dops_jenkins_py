@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: dataops_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: lorena2908
+      POSTGRES_DB: pagila
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./pagila-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./pagila-data.sql:/docker-entrypoint-initdb.d/02-data.sql
+
+  etl:
+    build: .
+    container_name: dataops_app
+    depends_on:
+      - postgres
+    environment:
+      DB_HOST: postgres  # 👈 nombre del servicio, no "localhost"
+      DB_PORT: 5432
+      DB_NAME: pagila
+      DB_USER: postgres
+      DB_PASS: lorena2908
+    volumes:
+    - ./output:/app/output   # ✅ Monta carpeta local ./output en el contenedor

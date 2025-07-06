@@ -1,43 +1,51 @@
-# DataOps - Python ✕ Docker ✕ Jenkins  
-Proceso automático de cálculo de comisiones.
+# DataOps - Pagila ✕ Python ✕ Docker ✕ Jenkins  
+Pipeline automatizado de análisis de rentabilidad y churn de clientes para un negocio de alquiler de películas.
 
 ---
 
 ## 1. Descripción
 
-Este proyecto ejecuta, de forma **100 % automatizada**, el flujo mensual de cálculo de comisiones :
+Este proyecto ejecuta, de forma **100 % automatizada**, un proceso de extracción, análisis y visualización de datos desde una base de datos PostgreSQL (`pagila`):
 
 1. **Ingesta**  
-   - Lee el CSV `ComisionEmpleados_V1_<AAAAMM>.csv` correspondiente al mes en curso.  
-   - Extrae la tabla **`rrhh.empleado`** desde PostgreSQL.
+   - Se conecta a PostgreSQL (`pagila`) para consultar datos históricos de alquiler, pago, películas, categorías y clientes.
 
 2. **Transformación**  
-   - Normaliza valores numéricos.  
-   - Calcula la comisión por empleado.  
+   - Calcula el puntaje de abandono de clientes.
+   - Detecta películas poco rentables.
+   - Resume la rentabilidad por categoría.
+   - Ranking de sucursales por ingresos.
 
 3. **Salida**  
-   - Exporta el resultado a **Excel** (`ComisionesCalculadas.xlsx`).  
-   - Envía el archivo por e-mail al destinatario configurado.
+   - Genera un archivo PDF (`reporte_pagila.pdf`) con gráficos y tablas.
+   - Publica automáticamente el informe como artefacto en Jenkins.
 
 4. **Orquestación**  
-   - Todo el código corre dentro de un contenedor **Docker** reproducible.  
-   - Un **pipeline de Jenkins** se encarga de compilar la imagen, ejecutar el job y publicar artefactos.
+   - Todo el código corre dentro de un contenedor **Docker** reproducible.
+   - Un pipeline en **Jenkins** compila la imagen, ejecuta el ETL y publica resultados.
+
 
 ---
 
 ## 2. Arquitectura
 
 ```
+┌──────────────┐ docker compose ┌────────────────────┐
+│ Jenkins Job │ ────────────────────▶│ Contenedor Python │
+│ (pipeline) │ │ Script ETL Pagila │
+└──────────────┘ │ │
+▲ │ - Conecta a PG │
+│ │ - Procesa métricas │
+│ PDF como artefacto │ - Genera PDF │
+└────────────────────────────│ - Output en /app │
+└────────────────────┘
+                     ▲
+                     │
+         ┌──────────────────────┐
+         │ PostgreSQL (Pagila)  │
+         │ init con pagila.sql  │
+         └──────────────────────┘
 
-┌──────────────┐    docker run    ┌────────────────┐
-│ Jenkins Job  │ ───────────────► │  Contenedor    │
-│  (pipeline)  │                  │  Python 3.11   │
-└──────────────┘                  │                │
-▲                                 │ 1. Lee CSV     │
-│                                 │ 2. Lee PG      │
-│  logs / artefactos              │ 3. Calcula     │
-└─────────────────────────────────│ 4. Excel+e-mail│
-                                  └────────────────┘
 
 ```
 
@@ -47,14 +55,13 @@ Este proyecto ejecuta, de forma **100 % automatizada**, el flujo mensual de cál
 
 | Componente | Versión | Propósito |
 |------------|---------|-----------|
-| Python     | 3.11    | Transformaciones y lógica de negocio |
-| Pandas     | 2.x     | Procesamiento de datos tabulares     |
-| psycopg2-binary | 2.9 | Conexión PostgreSQL                 |
-| openpyxl   | 3.x     | Exportar a Excel                     |
-| Docker     | 24+     | Aislamiento y portabilidad           |
-| Jenkins    | 2.452+  | CI/CD y orquestación DataOps         |
-| Mailtrap   | (sandbox) | Envío seguro de correos en pruebas |
-
+| Python     | 3.10+   | Transformaciones y lógica ETL       |
+| Pandas     | 2.x     | Procesamiento de datos              |
+| psycopg2-binary | 2.9 | Conexión PostgreSQL               |
+| matplotlib | 3.7+    | Visualizaciones y PDF               |
+| Docker     | 24+     | Contenerización y aislamiento       |
+| Jenkins    | 2.452+  | Automatización del pipeline         |
+| Azure VM   | Ubuntu  | Infraestructura de despliegue       |
 ---
 
 ## 4. Estructura de carpetas
@@ -63,155 +70,104 @@ Este proyecto ejecuta, de forma **100 % automatizada**, el flujo mensual de cál
 
 .
 ├─ app/
-│  ├─ main.py          # script principal
-│  ├─ config.json      # credenciales y rutas (NO commitear prod)
-│  └─ requirements.txt
-├─ data/               # aquí se montan los CSV de cada mes
-├─ Dockerfile
-└─ Jenkinsfile
-
+│ ├─ proyecto_bd_etl.py # Script principal ETL
+│ ├─ config.py # Conexión PostgreSQL
+│ ├─ requirements.txt # Dependencias Python
+│ ├─ Dockerfile # Imagen para contenedor ETL
+│ ├─ pagila.sql # Script para crear la base Pagila
+│ └─ output/ # Carpeta del informe generado
+├─ docker-compose.yml # Orquesta PostgreSQL + ETL + Jenkins
+├─ Jenkinsfile # Define el pipeline de CI/CD
+└─ README.md # Documentación del proyecto
 ````
 
 ---
 
 ## 5. Prerequisitos
 
-| Requisito | Notas |
-|-----------|-------|
-| Docker Engine | activo y con permisos para compilar imágenes |
-| Jenkins agent | con acceso a Docker / Podman |
-| PostgreSQL | tabla `rrhh.empleado` accesible desde el runner |
-| Mailtrap (sandbox) | para pruebas de e-mail sin riesgo |
-| Variable `CONFIG_FILE` | (opcional) ruta al `config.json` dentro del contenedor |
+| Requisito        | Notas                                         |
+|------------------|-----------------------------------------------|
+| Docker Engine    | Instalado en la Azure VM                      |
+| Jenkins Agent    | Con acceso a Docker (`/var/run/docker.sock`)  |
+| PostgreSQL       | Se inicializa automáticamente desde pagila.sql|
+| Azure VM         | Con puertos 8080 (Jenkins) y 5432 habilitados |
+| Git              | Clonado automático del repositorio            |
 
 ---
 
-## 6. Archivo `config.json` de ejemplo
 
-```jsonc
-{
-  "db": {
-    "host": "db.example.internal",
-    "port": 5432,
-    "dbname": "dmc",
-    "user": "usr_ro_dmc_rrhh_estudiantes",
-    "password": "********"
-  },
-  "smtp": {
-    "server": "sandbox.smtp.mailtrap.io",
-    "port": 587,
-    "user": "********",
-    "password": "********",
-    "sender_email": "Python DataOps <pydataops@example.com>"
-  },
-  "paths": {
-    "csv_dir": "/app/data",
-    "excel": "ComisionesCalculadas.xlsx"
-  },
-  "report": {
-    "to": "finanzas@example.com",
-    "subject": "Comisiones Calculadas",
-    "body_html": "Adjunto reporte de comisiones mensuales.<br>Saludos."
-  }
-}
-````
-
-> **Seguridad :** monta el JSON como *secret* (Docker Swarm) o credencial de Jenkins; evita incluirlo en el repositorio.
-
----
-
-## 7. Construcción y prueba local
+## 6. Ejecución local o en VM
 
 ```bash
-# clonar
-git clone https://github.com/tu-org/dataops-comisiones.git
-cd dataops-comisiones
+# clonar repositorio
+git clone https://github.com/tu-org/pagila-etl.git
+cd pagila-etl
 
-# compilar imagen
-docker build -t dataops/comisiones:latest .
+# levantar los servicios
+docker compose up --build
 
-# prueba en local (monta CSV y config)
-docker run --rm \
-  -v "$PWD/config.json:/app/config.json:ro" \
-  -v "$PWD/data:/app/data:ro" \
-  dataops/comisiones:latest
-```
+# el PDF se genera en:
+app/output/reporte_pagila.pdf
 
----
+7. Pipeline Jenkins (Jenkinsfile)
 
-## 8. Pipeline Jenkins (ejemplo)
-
-```groovy
 pipeline {
   agent any
-  environment {
-    IMAGE = "registry.example.com/dataops/comisiones:${env.BUILD_NUMBER}"
-  }
 
   stages {
     stage('Checkout') {
-      steps { checkout scm }
-    }
-
-    stage('Build') {
       steps {
-        sh 'docker build -t $IMAGE .'
+        git 'https://github.com/tu-org/pagila-etl.git'
       }
     }
 
-    stage('Test job') {
+    stage('Build ETL') {
       steps {
-        sh '''
-          docker run --rm \
-            -v $WORKSPACE/config.json:/app/config.json:ro \
-            -v $WORKSPACE/data:/app/data:ro \
-            $IMAGE
-        '''
+        sh 'docker compose build etl'
       }
     }
 
-    stage('Push image') {
-      when { branch 'main' }
+    stage('Run ETL') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'registry-creds',
-                                          usernameVariable: 'REG_USER',
-                                          passwordVariable: 'REG_PASS')]) {
-          sh '''
-            echo $REG_PASS | docker login registry.example.com -u $REG_USER --password-stdin
-            docker push $IMAGE
-          '''
-        }
+        sh 'docker compose run --rm etl'
+      }
+    }
+
+    stage('Publicar PDF') {
+      steps {
+        archiveArtifacts artifacts: 'app/output/*.pdf', fingerprint: true
       }
     }
   }
 
   post {
-    success {
-      archiveArtifacts artifacts: 'ComisionesCalculadas.xlsx', fingerprint: true
+    always {
+      sh 'docker compose down'
     }
   }
 }
-```
 
-* El stage **Test job** ejecuta el contenedor con los archivos de prueba.
-* El artefacto Excel se publica en Jenkins para descarga inmediata.
 
 ---
 
-## 9. Extensiones sugeridas
 
-| Idea                                                             | Valor                                          |
-| ---------------------------------------------------------------- | ---------------------------------------------- |
-| Desplegar en **AWS Fargate** o **Kubernetes CronJob**            | Escalabilidad sin servidores Jenkins dedicados |
-| Reemplazar Mailtrap por **SES / SendGrid** para producción       | Envío de correos en masa                       |
-| Añadir tests unitarios con **pytest** y cobertura en el pipeline | Calidad de código                              |
-| Incluir **alertas Slack** tras cada ejecución                    | visibilidad del proceso DataOps                |
-| Parametrizar el período para reprocesos manuales                 | flexibilidad operacional                       |
+## 8. Extensiones sugeridas
+
+| Idea                                     | Valor agregado                        |
+| ---------------------------------------- | ------------------------------------- |
+| Subir el PDF a Azure Blob Storage        | Distribución centralizada             |
+| Agregar dashboard en Power BI o Superset | Visualización interactiva             |
+| Agendar pipeline con triggers horarios   | Automatización real                   |
+| Integrar Slack o Teams para alertas      | Notificación inmediata a stakeholders |
+| Añadir ML para predicción de churn       | Análisis predictivo del negocio       |
+
 
 ---
 
 ## 10. Licencia
 
-DMC © 2025 — Miguelangel / DMC Institute
-Se permite uso comercial y modificación bajo los términos de la licencia.
+MIT License – Puedes modificar, usar y redistribuir libremente.
+
+Desarrollado por [Tu Nombre]
+🔗 GitHub: https://github.com/LorenaGL-source
 
